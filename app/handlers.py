@@ -25,8 +25,8 @@ async def cmd_start(message: Message, bot: Bot):
 <b>Привет{user_creds}!</b>
 
 <i>Спасибо за использование {bot_name}!
-Этот бот поможет тебе получить кружочек из своего видео.
-Чтобы бот начал рабоать - просто отправь мне видео формата кружочка!
+Этот бот поможет тебе получить кружочек из своего видео или голосовое из своего аудио.
+Чтобы бот начал рабоать - просто отправь мне видео формата кружочка или файл с аудио!
 
 made by <a href="https://t.me/juiceworks">Juice</a>, @{bot_username}!</i>
 """
@@ -49,6 +49,57 @@ made by <a href="https://t.me/juiceworks">Juice</a>, @{bot_username}!</i>
         )
 
 
+@router.message(lambda message: message.audio)
+async def handle_audio(message: Message, bot: Bot):
+    await bot.send_chat_action(message.chat.id, "upload_audio")
+
+    audio = message.audio
+    file_id = audio.file_id
+    msg = await bot.send_message(
+        message.chat.id,
+        "<b>Аудио найдено! Начинаю обработку...</b>",
+        reply_parameters=ReplyParameters(message_id=message.message_id),
+        parse_mode='html'
+    )
+
+    file = await bot.get_file(file_id)
+
+    # date = int(datetime.datetime.now(tz=datetime.timezone.utc).timestamp())
+    uniq_name = f"{message.chat.id}_{file_id}.mp3"
+
+    try:
+        file_path = str(DOWNLOADS_DIR.joinpath(uniq_name))
+        await bot.download_file(file.file_path, file_path)
+
+        audio_file = FSInputFile(file_path)
+        await message.reply_voice(voice=audio_file)
+    except Exception as ex:
+        if "VOICE_MESSAGES_FORBIDDEN" in str(ex):
+            logger.error(str(ex) + f". Chat_id: {message.chat.id}")
+
+            text = """
+<b>❌ Ошибка отправки аудио!</b>
+
+<i>Кажется, в Ваших настройках стоит запрет на отправку голосовых сообщений!</i>
+
+<b>Пожалуйста, добавьте бота в список исключений, или уберите запрет.</b>"""
+            await bot.send_message(
+                message.chat.id,
+                text,
+                reply_parameters=ReplyParameters(message_id=message.message_id),
+                parse_mode='html'
+            )
+        else:
+            logger.error(traceback.format_exc())
+    finally:
+        os.remove(file_path)
+
+    try:
+        await bot.delete_message(message.chat.id, msg.message_id)
+    except:
+        logger.error(traceback.format_exc())
+
+    
 @router.message(lambda message: message.video)
 async def handle_video_note(message: Message, bot: Bot):
     await bot.send_chat_action(message.chat.id, "upload_video_note")
@@ -97,7 +148,7 @@ async def handle_video_note(message: Message, bot: Bot):
     try:
         await bot.delete_message(message.chat.id, msg.message_id)
     except:
-        logger.error(traceback.format_exc())    
+        logger.error(traceback.format_exc())
 
 
 @router.message()
